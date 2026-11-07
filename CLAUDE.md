@@ -46,3 +46,5 @@ python3 scripts/install-bridge.py              # rebuild the add-on, rewrite the
 
 - License: MIT.
 - Thunderbird keeps all mail locally for now, because the bridge only searches what is stored locally.
+- The owner's first two commits keep their original author address. It is already public, so history won't be rewritten. New commits use the no-reply address.
+- The owner's main concern is mail content and having all their addresses listed together. Never add any of their other addresses to this repo, including in examples or docs.
