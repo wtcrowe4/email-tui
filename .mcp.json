@@ -1,0 +1,7 @@
+{
+  "mcpServers": {
+    "thunderbird": {
+      "command": "bin/email-bridge-mcp"
+    }
+  }
+}

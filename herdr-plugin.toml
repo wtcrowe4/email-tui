@@ -1,0 +1,28 @@
+id = "wtcrowe4.email-tui"
+name = "Email TUI"
+version = "0.1.0"
+description = "Mail in a herdr pane, plus an unread sidebar badge and new-mail toasts from a local Thunderbird bridge."
+min_herdr_version = "0.8.0"
+platforms = ["linux"]
+
+# Starts the background badge and toast process. It exits when herdr stops.
+[[startup]]
+command = ["bash", "bin/email-tui-start"]
+
+[[actions]]
+id = "start"
+title = "Email: start notifier"
+contexts = ["workspace"]
+command = ["bash", "bin/email-tui-start"]
+
+[[actions]]
+id = "open"
+title = "Email: open Rail"
+contexts = ["workspace"]
+command = ["sh", "-c", "exec \"$HERDR_BIN_PATH\" plugin pane open --plugin wtcrowe4.email-tui --entrypoint rail"]
+
+[[panes]]
+id = "rail"
+title = "Mail"
+placement = "tab"
+command = ["bash", "bin/rail-pane"]

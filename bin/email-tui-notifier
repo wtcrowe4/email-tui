@@ -1,0 +1,99 @@
+#!/usr/bin/env python3
+"""Keeps herdr's $mail sidebar token current and shows a toast on new mail.
+
+Only sees counts. It never asks for subjects, senders or bodies.
+"""
+
+import fcntl
+import json
+import os
+import queue
+import subprocess
+import sys
+import threading
+import time
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "bridge"))
+
+from email_tui_bridge.client import BridgeError, call, events
+
+HERDR = os.environ.get("HERDR_BIN_PATH", "herdr")
+SOURCE = "wtcrowe4.email-tui"
+REFRESH_SECONDS = 60
+RETRY_SECONDS = 30
+MAX_HERDR_FAILURES = 3
+
+
+def herdr(*args: str) -> str | None:
+    try:
+        done = subprocess.run([HERDR, *args], capture_output=True, text=True, timeout=10)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return done.stdout if done.returncode == 0 else None
+
+
+def workspaces() -> list[str] | None:
+    output = herdr("workspace", "list")
+    if output is None:
+        return None
+    return [w["workspace_id"] for w in json.loads(output)["result"]["workspaces"]]
+
+
+def badge_args(workspace: str, total: int | None) -> list[str]:
+    base = ["workspace", "report-metadata", workspace, "--source", SOURCE]
+    return [*base, "--token", f"mail=✉ {total}"] if total else [*base, "--clear-token", "mail"]
+
+
+def watch(pending: queue.Queue) -> None:
+    while True:
+        try:
+            for event in events():
+                pending.put(event)
+        except (BridgeError, OSError, ValueError):
+            pass
+        time.sleep(RETRY_SECONDS)
+
+
+def main() -> None:
+    state = Path(os.environ.get("HERDR_PLUGIN_STATE_DIR", Path.home() / ".local/state/email-tui"))
+    state.mkdir(parents=True, exist_ok=True)
+    lock = open(state / "notifier.lock", "w")
+    try:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        return  # Already running.
+
+    pending: queue.Queue = queue.Queue()
+    threading.Thread(target=watch, args=(pending,), daemon=True).start()
+    names: dict[str, str] = {}
+    failures = 0
+    while True:
+        try:
+            accounts = call("unread")
+            names = {a["account"]: a["name"] for a in accounts}
+            total = sum(a["unread"] for a in accounts)
+        except BridgeError:
+            total = None
+        ids = workspaces()
+        if ids is None:
+            # The herdr server is gone, so stop until its next startup hook.
+            failures += 1
+            if failures >= MAX_HERDR_FAILURES:
+                return
+        else:
+            failures = 0
+            for workspace in ids:
+                herdr(*badge_args(workspace, total))
+        try:
+            event = pending.get(timeout=REFRESH_SECONDS if total is not None else RETRY_SECONDS)
+        except queue.Empty:
+            continue
+        if event.get("event") == "new_mail":
+            count = event.get("count", 1)
+            where = names.get(event.get("account"), "your inbox")
+            herdr("notification", "show", "New mail", "--body", f"{count} new in {where}", "--sound", "none")
+
+
+if __name__ == "__main__":
+    main()

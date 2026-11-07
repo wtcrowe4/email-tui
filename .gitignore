@@ -5,3 +5,15 @@ node_modules/
 token*.json
 credentials*.json
 client_secret*.json
+
+dist/
+__pycache__/
+
+# Could contain real mail details. Keep local.
+docs/RAIL-NOTES.md
+*.eml
+*.mbox
+*.msf
+*.sqlite
+*.sqlite-*
+secrets.json

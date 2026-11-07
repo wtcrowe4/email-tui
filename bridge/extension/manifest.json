@@ -1,0 +1,22 @@
+{
+  "manifest_version": 3,
+  "name": "Email TUI Bridge",
+  "version": "0.1.0",
+  "description": "Read-only local bridge from Thunderbird to terminal tools. It can open a compose window, but it cannot send, delete, move or change mail.",
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "email-tui-bridge@wtcrowe4.github.io",
+      "strict_min_version": "128.0"
+    }
+  },
+  "background": {
+    "scripts": ["background.js"]
+  },
+  "permissions": [
+    "accountsRead",
+    "messagesRead",
+    "compose",
+    "nativeMessaging",
+    "alarms"
+  ]
+}

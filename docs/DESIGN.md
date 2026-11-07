@@ -2,6 +2,8 @@
 
 Status: DRAFT. Researched 2026-11-06. Nothing here touched real Gmail, Google Cloud or any credential.
 
+Update: the project now covers Outlook too, and runs on Omarchy rather than WSL. Rail also supports Microsoft accounts through Graph, which this document doesn't reflect, and its WSL keyring notes don't apply on Omarchy. The plugin now gets its unread count from the Thunderbird bridge (`docs/BRIDGE.md`) rather than Rail.
+
 **Verdict: do not build a new Gmail client. Build a thin herdr plugin around Rail, and send missing features upstream as PRs.** Section 7 holds the full-client design in case the owner overrides this. No spike was built, because Step 3 was conditional on Step 1 justifying a new TUI.
 
 How facts are marked: *est* = my estimate. *unverified* = from memory or one weak source. Rail was assessed from its docs and source only; it was not compiled or run.

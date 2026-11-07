@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+# Opens Rail, or explains how to set it up. It never installs anything.
+export PATH="$HOME/.local/bin:$PATH"
+if ! command -v rail >/dev/null; then
+  echo "Rail is not installed. See docs/TRY-RAIL.md."
+  read -r -p "Press Enter to close. " _
+  exit 1
+fi
+if [ ! -f "${XDG_CONFIG_HOME:-$HOME/.config}/rail/config.toml" ]; then
+  echo "Rail has no accounts yet. Run: rail setup"
+  read -r -p "Press Enter to close. " _
+  exit 1
+fi
+exec rail

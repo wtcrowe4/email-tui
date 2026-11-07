@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# Starts the notifier detached. A lock inside it stops a second copy.
+set -euo pipefail
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+setsid -f python3 "$root/bin/email-tui-notifier" </dev/null >/dev/null 2>&1
