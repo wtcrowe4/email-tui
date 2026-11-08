@@ -13,9 +13,16 @@ import threading
 from pathlib import Path
 
 from .client import socket_path
+from .protected import redact
 
-# Must stay read-only plus "draft", which only opens a compose window.
-ALLOWED_METHODS = frozenset({"status", "accounts", "unread", "search", "read", "draft"})
+# Everything the add-on offers. There is no send method, and the add-on has no send permission.
+ALLOWED_METHODS = frozenset({
+    "status", "accounts", "unread", "career", "search", "read", "draft", "saveDraft",
+    "folders", "createFolder", "renameFolder", "moveFolder", "deleteFolder", "markFolderRead",
+    "moveMessages", "copyMessages", "archiveMessages", "trashMessages", "updateMessages",
+    "tags", "createTag", "updateTag", "contacts", "addressBooks", "createContact",
+    "identities", "setSignature",
+})
 MAX_REQUEST_BYTES = 256 * 1024
 MAX_NATIVE_BYTES = 64 * 1024 * 1024
 PING_SECONDS = 15
@@ -61,7 +68,7 @@ class Host:
         self.path = path
         self.write_lock = threading.Lock()
         self.state_lock = threading.Lock()
-        self.pending: dict[int, tuple[Client, object]] = {}
+        self.pending: dict[int, tuple[Client, object, str]] = {}
         self.subscribers: set[Client] = set()
         self.next_id = 0
         self.stopped = threading.Event()
@@ -106,7 +113,7 @@ class Host:
         finally:
             with self.state_lock:
                 self.subscribers.discard(client)
-                for key in [k for k, (c, _) in self.pending.items() if c is client]:
+                for key in [k for k, (c, _, _) in self.pending.items() if c is client]:
                     del self.pending[key]
 
     def handle_request(self, client: Client, line: bytes) -> None:
@@ -128,7 +135,7 @@ class Host:
         with self.state_lock:
             self.next_id += 1
             native_id = self.next_id
-            self.pending[native_id] = (client, request_id)
+            self.pending[native_id] = (client, request_id, method)
         self.to_extension({"id": native_id, "method": method, "params": request.get("params") or {}})
 
     def handle_native(self, message: dict) -> None:
@@ -141,7 +148,9 @@ class Host:
         with self.state_lock:
             entry = self.pending.pop(message.get("id"), None)
         if entry:
-            client, request_id = entry
+            client, request_id, method = entry
+            if message.get("ok"):
+                message = {**message, "result": redact(method, message.get("result"))}
             client.send({**message, "id": request_id})
 
     def ping_loop(self) -> None:

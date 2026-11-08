@@ -39,31 +39,42 @@ Email is written by strangers, so a message can contain instructions aimed at Cl
 
 | Layer | Limit |
 |---|---|
-| Add-on permissions | No send, delete, move, modify or filter permission, so Thunderbird refuses those calls. `compose.send` is not granted |
+| Add-on permissions | Reads and organises mail: folders, move, copy, archive, trash, flags, tags, contacts, signatures and saved drafts. Identities can only have their signature changed, never be created or deleted. No `messages.send` or `compose.send`, so Thunderbird refuses to send |
+| Deleting | Trash moves mail to the account's Trash folder. Permanent deletion is never called. Folders can be deleted only when empty, and built-in folders can't be renamed, moved or deleted |
 | Add-on type | Standard MailExtension. No Experiment API, so no access beyond its permissions |
-| Helper | Allowlist of six methods |
-| Drafts | Open a window for review. Sending is always the owner's click. No attachments |
-| Events | New-mail events carry only a count and an account |
+| Helper | Allowlist of methods. None of them sends |
+| Protected mail | Subjects and bodies (text and HTML) of mail in a Finance folder, or from senders in `~/.config/email-tui/protected.json`, are removed before any client sees them |
+| Drafts | Saved to Drafts or opened in a window for review. Sending is always the owner's click |
+| Events | New-mail events carry a count, an account and up to three sender display names. Never addresses, subjects or bodies |
 
-`bridge/tests` fails if a permission is added or a dangerous API is called. Reading can't be blocked this way: anything Claude reads could be repeated in its session, so read only what's needed.
+`bridge/tests` fails if a send permission is added or a send, permanent-delete or attachment-removal API is called. Reading can't be blocked this way: anything Claude reads could be repeated in its session, so read only what's needed.
 
 ## Install notes
 
 - The host manifest goes in `~/.mozilla/native-messaging-hosts/`. Thunderbird 153 reads that path, even though its profile is in `~/.thunderbird`.
-- Thunderbird accepted the unsigned add-on when it was placed in a test profile. The Install From File path has not been tested.
+- Install From File works on Thunderbird 158 with real accounts.
 - The manifest stores an absolute path to `bin/email-bridge-host`. Rerun `scripts/install-bridge.py` if the repo moves.
 - After changing the add-on, rebuild it and install it again.
 
-## Herdr badge
+## Herdr badge and alerts
 
-The plugin sets a `$mail` token on each workspace. Show it by adding the token to a sidebar row in `~/.config/herdr/config.toml`:
+The plugin sets two tokens on one workspace, named by `EMAIL_TUI_WORKSPACE` (default `Messages`), and clears them everywhere else:
+
+- `$mail`: unread inbox mail, as `✉ 5`
+- `$career`: unread inbox mail that looks job-related, as `★ 2`
+
+Show them by adding the tokens to a sidebar row in `~/.config/herdr/config.toml`:
 
 ```toml
 [ui.sidebar.spaces]
 rows = [
-  ["state_icon", "workspace", "$mail"],
+  ["state_icon", "workspace", "$career", "$mail"],
   ["branch", "git_status"],
 ]
 ```
 
-The count covers inbox folders only, because Gmail labels would otherwise count one message several times.
+New mail shows a herdr toast with the senders' display names. Career mail also raises a desktop notification that stays until dismissed.
+
+Career mail is flagged mail, LinkedIn messages, invitations and application updates, mail from common recruiting systems, and subjects such as "interview" or "your application". LinkedIn job alerts are left out. The rules in `background.js` are generic on purpose. Rules about specific people or organisations belong in Thunderbird filters, which stay in the local profile.
+
+The counts cover inbox folders only, because Gmail labels would otherwise count one message several times.

@@ -34,6 +34,10 @@ def parser() -> argparse.ArgumentParser:
     draft.add_argument("--cc")
     draft.add_argument("--subject")
     draft.add_argument("--body")
+
+    generic = commands.add_parser("call", help="call any bridge method with JSON params, such as folders")
+    generic.add_argument("method")
+    generic.add_argument("params", nargs="?", default="{}", help="JSON object")
     return root
 
 
@@ -41,6 +45,12 @@ def run(args: argparse.Namespace) -> None:
     if args.command == "watch":
         for event in events():
             print(json.dumps(event), flush=True)
+        return
+    if args.command == "call":
+        params = json.loads(args.params)
+        if not isinstance(params, dict):
+            sys.exit("email-bridge: params must be a JSON object")
+        print(json.dumps(call(args.method, **params), indent=2, ensure_ascii=False))
         return
     if args.command == "search":
         params = {

@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
-"""Keeps herdr's $mail sidebar token current and shows a toast on new mail.
+"""Keeps herdr's $mail and $career tokens current and shows toasts on new mail.
 
-Only sees counts. It never asks for subjects, senders or bodies.
+The badges go only on the workspace named by EMAIL_TUI_WORKSPACE (default
+"Messages"). Toasts show sender display names, never subjects or bodies.
+Career mail also raises a desktop alert that stays until dismissed.
 """
 
 import fcntl
@@ -19,7 +21,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "bridge"))
 from email_tui_bridge.client import BridgeError, call, events
 
 HERDR = os.environ.get("HERDR_BIN_PATH", "herdr")
+WORKSPACE = os.environ.get("EMAIL_TUI_WORKSPACE", "Messages")
 SOURCE = "wtcrowe4.email-tui"
+TOKENS = ("mail", "career")
 REFRESH_SECONDS = 60
 RETRY_SECONDS = 30
 MAX_HERDR_FAILURES = 3
@@ -33,16 +37,63 @@ def herdr(*args: str) -> str | None:
     return done.stdout if done.returncode == 0 else None
 
 
-def workspaces() -> list[str] | None:
+def workspaces() -> list[dict] | None:
     output = herdr("workspace", "list")
     if output is None:
         return None
-    return [w["workspace_id"] for w in json.loads(output)["result"]["workspaces"]]
+    return json.loads(output)["result"]["workspaces"]
 
 
-def badge_args(workspace: str, total: int | None) -> list[str]:
-    base = ["workspace", "report-metadata", workspace, "--source", SOURCE]
-    return [*base, "--token", f"mail=✉ {total}"] if total else [*base, "--clear-token", "mail"]
+def wanted_tokens(mail: int | None, career: int | None) -> dict[str, str | None]:
+    return {
+        "mail": f"✉ {mail}" if mail else None,
+        "career": f"★ {career}" if career else None,
+    }
+
+
+def badge_calls(spaces: list[dict], wanted: dict[str, str | None]) -> list[list[str]]:
+    """herdr calls that put the tokens on the mail workspace and clear them elsewhere."""
+    calls = []
+    for space in spaces:
+        mine = space.get("label", "").casefold() == WORKSPACE.casefold()
+        current = space.get("tokens") or {}
+        for name in TOKENS:
+            value = wanted[name] if mine else None
+            if current.get(name) == value:
+                continue
+            base = ["workspace", "report-metadata", space["workspace_id"], "--source", SOURCE]
+            calls.append([*base, "--token", f"{name}={value}"] if value else [*base, "--clear-token", name])
+    return calls
+
+
+def toast(event: dict, names: dict[str, str]) -> tuple[str, str, bool]:
+    """Title, body and whether this is career mail."""
+    where = names.get(event.get("account"), "Mail")
+    career = event.get("career") or []
+    if career:
+        return "★ Career mail", f"{', '.join(career)} · {where}", True
+    count = event.get("count", 1)
+    senders = event.get("senders") or []
+    who = ", ".join(senders) if senders else f"{count} new"
+    if count > len(senders) and senders:
+        who += f" +{count - len(senders)} more"
+    return "New mail", f"{who} · {where}", False
+
+
+def desktop_alert(title: str, body: str) -> None:
+    try:
+        subprocess.run(
+            ["notify-send", "--urgency=critical", "--app-name=Email TUI", title, body],
+            timeout=10,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        pass
+
+
+def total(method: str) -> tuple[int | None, dict[str, str]]:
+    accounts = call(method)
+    return sum(a["unread"] for a in accounts), {a["account"]: a["name"] for a in accounts}
 
 
 def watch(pending: queue.Queue) -> None:
@@ -70,29 +121,33 @@ def main() -> None:
     failures = 0
     while True:
         try:
-            accounts = call("unread")
-            names = {a["account"]: a["name"] for a in accounts}
-            total = sum(a["unread"] for a in accounts)
+            mail, names = total("unread")
         except BridgeError:
-            total = None
-        ids = workspaces()
-        if ids is None:
+            mail = None
+        try:
+            career = total("career")[0] if mail is not None else None
+        except BridgeError:
+            career = None  # An older add-on without the career count.
+        spaces = workspaces()
+        if spaces is None:
             # The herdr server is gone, so stop until its next startup hook.
             failures += 1
             if failures >= MAX_HERDR_FAILURES:
                 return
         else:
             failures = 0
-            for workspace in ids:
-                herdr(*badge_args(workspace, total))
+            for args in badge_calls(spaces, wanted_tokens(mail, career)):
+                herdr(*args)
         try:
-            event = pending.get(timeout=REFRESH_SECONDS if total is not None else RETRY_SECONDS)
+            event = pending.get(timeout=REFRESH_SECONDS if mail is not None else RETRY_SECONDS)
         except queue.Empty:
             continue
         if event.get("event") == "new_mail":
-            count = event.get("count", 1)
-            where = names.get(event.get("account"), "your inbox")
-            herdr("notification", "show", "New mail", "--body", f"{count} new in {where}", "--sound", "none")
+            title, body, is_career = toast(event, names)
+            sound = "request" if is_career else "none"
+            herdr("notification", "show", title, "--body", body, "--sound", sound)
+            if is_career:
+                desktop_alert(title, body)
 
 
 if __name__ == "__main__":

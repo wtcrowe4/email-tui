@@ -16,7 +16,7 @@ import sys
 from pathlib import Path
 
 ALLOWED_EMAIL = re.compile(
-    r"@(example\.(com|org|net|invalid)|users\.noreply\.github\.com|wtcrowe4\.github\.io)$"
+    r"@((?:[a-z0-9-]+\.)*example\.(com|org|net|invalid)|users\.noreply\.github\.com|wtcrowe4\.github\.io)$"
     r"|^noreply@anthropic\.com$",
     re.IGNORECASE,
 )

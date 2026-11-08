@@ -1,6 +1,6 @@
 // Email TUI Bridge. Answers requests from the local native host.
-// The manifest grants no send, delete, move or modify permission, so Thunderbird
-// rejects those calls even if this file is changed or misused.
+// It may organise mail, folders, tags and contacts and save drafts. The manifest
+// grants no send permission, so Thunderbird refuses to send even if this file is changed.
 
 const HOST_NAME = "email_tui_bridge";
 const MAX_LIMIT = 50;
@@ -9,7 +9,39 @@ const SCAN_MS = 20000;
 const BODY_CHARS = 100000;
 const DEFAULT_SINCE_DAYS = 90;
 
+// Generic job-search signals only. Personal rules belong in Thunderbird filters,
+// which stay in the local profile, not in this public file.
+const CAREER_NEVER = /jobalerts-noreply@linkedin\.com|@em\.linkedin\.com/i;
+const CAREER_SENDERS = new RegExp(
+  "(messages-noreply|inmail-hit-reply|hit-reply|invitations|jobs-noreply)@linkedin\\.com" +
+    "|[@.](avature\\.net|myworkday(jobs)?\\.com|greenhouse(-mail)?\\.io|lever\\.co|icims\\.com" +
+    "|smartrecruiters\\.com|jobvite\\.com|ashbyhq\\.com|roberthalf\\.com|dice\\.com)>?$" +
+    "| via linkedin\\b",
+  "i",
+);
+const CAREER_SUBJECT =
+  /\b(interview|recruiter|recruiting|your application|application (received|status|update)|job opportunity|opportunity at)\b/i;
+const MAX_EVENT_NAMES = 3;
+
 let port = null;
+
+function isCareer(m) {
+  const author = m.author ?? "";
+  if (CAREER_NEVER.test(author)) return false;
+  return m.flagged === true || CAREER_SENDERS.test(author) || CAREER_SUBJECT.test(m.subject ?? "");
+}
+
+// Display name only, never the address, so toasts show "Robert Half", not mail ids.
+function senderName(author) {
+  const name = (author ?? "").replace(/<[^>]*>/, "").replace(/"/g, "").trim();
+  if (name && !name.includes("@")) return name.slice(0, 60);
+  const address = (author ?? "").match(/@([^>\s]+)/);
+  return address ? address[1] : "Unknown sender";
+}
+
+function senderNames(messages) {
+  return [...new Set(messages.map((m) => senderName(m.author)))].slice(0, MAX_EVENT_NAMES);
+}
 
 function connect() {
   if (port) return;
@@ -103,6 +135,38 @@ const HANDLERS = {
     return result;
   },
 
+  // Unread inbox mail that looks job-related, per account. Counts only.
+  async career() {
+    const result = [];
+    for (const account of await mailAccounts()) {
+      const folders = await inboxFolders(account.id);
+      let unread = 0;
+      if (folders.length) {
+        let scanned = 0;
+        let page = await messenger.messages.query({
+          folderId: folders.map((f) => f.id),
+          read: false,
+          messagesPerPage: 100,
+          autoPaginationTimeout: 1000,
+        });
+        while (true) {
+          for (const m of page.messages) {
+            scanned += 1;
+            if (isCareer(m)) unread += 1;
+          }
+          if (!page.id) break;
+          if (scanned >= SCAN_CAP) {
+            await messenger.messages.abortList(page.id);
+            break;
+          }
+          page = await messenger.messages.continueList(page.id);
+        }
+      }
+      result.push({ account: account.id, name: account.name, unread });
+    }
+    return result;
+  },
+
   async search(params) {
     const limit = Math.min(Math.max(Number(params.limit) || 20, 1), MAX_LIMIT);
     const since = str(params.since, "since", 40);
@@ -161,7 +225,13 @@ const HANDLERS = {
       body = html === null ? "" : htmlToText(html);
     }
     const attachments = await messenger.messages.listAttachments(id);
+    const extra = {};
+    if (params.html === true) {
+      const html = findBody(full, "text/html");
+      extra.bodyHtml = html === null ? "" : html.slice(0, BODY_CHARS * 4);
+    }
     return {
+      ...extra,
       ...headerSummary(header),
       to: header.recipients,
       cc: header.ccList,
@@ -186,7 +256,280 @@ const HANDLERS = {
     });
     return { opened: true, tabId: tab.id };
   },
+
+  // Saves straight to the Drafts folder for the owner to review. Never sends.
+  async saveDraft(params) {
+    const details = {
+      to: str(params.to, "to"),
+      cc: str(params.cc, "cc"),
+      bcc: str(params.bcc, "bcc"),
+      subject: str(params.subject, "subject"),
+      plainTextBody: str(params.body, "body", 100000) ?? "",
+      isPlainText: true,
+    };
+    const identity = str(params.identity, "identity", 200);
+    if (identity) details.identityId = identity;
+    await messenger.messages.saveMessage(details, { mode: "draft" });
+    return { saved: true };
+  },
+
+  // ---- Folders ----
+
+  async folders(params) {
+    const account = str(params.account, "account", 200);
+    const list = await messenger.folders.query(account ? { accountId: account } : {});
+    const result = [];
+    for (const f of list) {
+      if (f.isRoot || f.isUnified || f.isTag || f.isVirtual) continue;
+      const entry = { id: f.id, account: f.accountId, path: f.path, name: f.name, specialUse: f.specialUse ?? [] };
+      if (params.counts === true) {
+        const info = await messenger.folders.getFolderInfo(f.id);
+        entry.unread = info.unreadMessageCount ?? 0;
+        entry.total = info.totalMessageCount ?? 0;
+      }
+      result.push(entry);
+    }
+    return result;
+  },
+
+  async createFolder(params) {
+    const parent = await resolveFolder(params.parent, "parent");
+    const created = await messenger.folders.create(parent, folderName(params.name));
+    return { id: created.id, path: created.path };
+  },
+
+  async renameFolder(params) {
+    const folder = await resolveFolder(params.folder);
+    await refuseSpecial(folder);
+    const renamed = await messenger.folders.rename(folder, folderName(params.name));
+    return { id: renamed.id, path: renamed.path };
+  },
+
+  async moveFolder(params) {
+    const folder = await resolveFolder(params.folder);
+    await refuseSpecial(folder);
+    const moved = await messenger.folders.move(folder, await resolveFolder(params.to, "to"));
+    return { id: moved.id, path: moved.path };
+  },
+
+  // Only empty folders, so mail is never lost this way.
+  async deleteFolder(params) {
+    const folder = await resolveFolder(params.folder);
+    await refuseSpecial(folder);
+    const info = await messenger.folders.getFolderInfo(folder);
+    const children = await messenger.folders.getSubFolders(folder, false);
+    if ((info.totalMessageCount ?? 0) > 0 || children.length > 0) {
+      throw new Error("folder is not empty; move its mail and subfolders out first");
+    }
+    await messenger.folders.delete(folder);
+    return { deleted: true };
+  },
+
+  async markFolderRead(params) {
+    await messenger.folders.markAsRead(await resolveFolder(params.folder));
+    return { done: true };
+  },
+
+  // ---- Messages ----
+
+  async moveMessages(params) {
+    const list = messageIds(params.ids);
+    await messenger.messages.move(list, await resolveFolder(params.to, "to"), { isUserAction: true });
+    return { moved: list.length };
+  },
+
+  async copyMessages(params) {
+    const list = messageIds(params.ids);
+    await messenger.messages.copy(list, await resolveFolder(params.to, "to"), { isUserAction: true });
+    return { copied: list.length };
+  },
+
+  async archiveMessages(params) {
+    const list = messageIds(params.ids);
+    await messenger.messages.archive(list);
+    return { archived: list.length };
+  },
+
+  // Moves to each account's Trash folder. messages.delete is not used, because it
+  // follows the account's deletion setting, which can remove mail permanently.
+  async trashMessages(params) {
+    const byAccount = new Map();
+    for (const id of messageIds(params.ids)) {
+      const header = await messenger.messages.get(id);
+      const account = header.folder?.accountId;
+      if (!account) throw new Error(`message ${id} has no account`);
+      if (!byAccount.has(account)) byAccount.set(account, []);
+      byAccount.get(account).push(id);
+    }
+    let trashed = 0;
+    for (const [account, list] of byAccount) {
+      const [trash] = await messenger.folders.query({ accountId: account, specialUse: ["trash"] });
+      if (!trash) throw new Error(`no Trash folder in ${account}`);
+      await messenger.messages.move(list, trash.id, { isUserAction: true });
+      trashed += list.length;
+    }
+    return { trashed };
+  },
+
+  async updateMessages(params) {
+    const list = messageIds(params.ids);
+    const props = {};
+    for (const key of ["read", "flagged", "junk"]) {
+      if (params[key] === undefined) continue;
+      if (typeof params[key] !== "boolean") throw new Error(`invalid ${key}`);
+      props[key] = params[key];
+    }
+    if (params.tags !== undefined) {
+      if (!Array.isArray(params.tags) || params.tags.some((t) => typeof t !== "string")) {
+        throw new Error("invalid tags");
+      }
+      props.tags = params.tags;
+    }
+    if (!Object.keys(props).length) throw new Error("nothing to update");
+    for (const id of list) await messenger.messages.update(id, props);
+    return { updated: list.length };
+  },
+
+  // ---- Tags ----
+
+  async tags() {
+    return messenger.messages.tags.list();
+  },
+
+  async createTag(params) {
+    const tag = str(params.name, "name", 100);
+    const color = str(params.color, "color", 7);
+    if (!tag || !/^#[0-9a-fA-F]{6}$/.test(color ?? "")) throw new Error("need name and #rrggbb color");
+    const key = await messenger.messages.tags.create(str(params.key, "key", 100), tag, color);
+    return { key };
+  },
+
+  async updateTag(params) {
+    const props = {};
+    if (params.name !== undefined) props.tag = str(params.name, "name", 100);
+    if (params.color !== undefined) props.color = str(params.color, "color", 7);
+    await messenger.messages.tags.update(str(params.key, "key", 100), props);
+    return { updated: true };
+  },
+
+  // ---- Contacts ----
+
+  async contacts(params) {
+    const searchString = str(params.text, "text", 200);
+    const found = await messenger.addressBooks.contacts.query({ searchString });
+    return found.slice(0, MAX_LIMIT).map((c) => ({
+      id: c.id,
+      book: c.parentId,
+      name: vcardValue(c.vCard, "FN"),
+      emails: vcardValues(c.vCard, "EMAIL"),
+    }));
+  },
+
+  async addressBooks() {
+    const books = await messenger.addressBooks.list(false);
+    return books.map((b) => ({ id: b.id, name: b.name, readOnly: b.readOnly ?? false }));
+  },
+
+  async createContact(params) {
+    const book = str(params.book, "book", 200);
+    const name = str(params.name, "name", 200);
+    const email = str(params.email, "email", 320);
+    if (!book || !name) throw new Error("need book and name");
+    const lines = ["BEGIN:VCARD", "VERSION:4.0", `FN:${vcardEscape(name)}`];
+    if (email) lines.push(`EMAIL:${vcardEscape(email)}`);
+    lines.push("END:VCARD");
+    const id = await messenger.addressBooks.contacts.create(book, lines.join("\r\n"));
+    return { id };
+  },
+
+  async identities() {
+    const result = [];
+    for (const account of await mailAccounts()) {
+      for (const i of await messenger.identities.list(account.id)) {
+        result.push({
+          id: i.id,
+          account: account.id,
+          accountName: account.name,
+          name: i.name,
+          email: i.email,
+          label: i.label,
+          composeHtml: i.composeHtml,
+          signatureIsPlainText: i.signatureIsPlainText,
+          signature: i.signature,
+        });
+      }
+    }
+    return result;
+  },
+
+  // Only the signature fields. Name, address and reply-to stay as the owner set them.
+  async setSignature(params) {
+    const identity = str(params.identity, "identity", 200);
+    if (!identity) throw new Error("need identity");
+    if (typeof params.signature !== "string" || params.signature.length > 20000) {
+      throw new Error("invalid signature");
+    }
+    const html = params.html === true;
+    const update = { signature: params.signature, signatureIsPlainText: !html };
+    if (html) update.composeHtml = true;
+    await messenger.identities.update(identity, update);
+    return { identity, html };
+  },
 };
+
+const MAX_IDS = 500;
+
+function messageIds(value) {
+  if (!Array.isArray(value) || value.length === 0 || value.length > MAX_IDS) {
+    throw new Error(`ids must be a list of 1 to ${MAX_IDS} message ids`);
+  }
+  return value.map((v) => {
+    const n = Number(v);
+    if (!Number.isInteger(n)) throw new Error("invalid message id");
+    return n;
+  });
+}
+
+function folderName(value) {
+  const name = str(value, "name", 200);
+  if (!name || /[/\\]/.test(name)) throw new Error("invalid folder name");
+  return name;
+}
+
+// A folder is given as its id, or as { account, path }. Path "/" is the account root.
+async function resolveFolder(ref, label = "folder") {
+  if (typeof ref === "string") return (await messenger.folders.get(ref)).id;
+  if (ref && typeof ref === "object") {
+    const accountId = str(ref.account, `${label}.account`, 200);
+    const path = str(ref.path, `${label}.path`, 500);
+    if (accountId && path) {
+      const query = path === "/" ? { accountId, isRoot: true } : { accountId, path };
+      const [found] = await messenger.folders.query(query);
+      if (found) return found.id;
+    }
+  }
+  throw new Error(`unknown ${label}`);
+}
+
+async function refuseSpecial(folderId) {
+  const folder = await messenger.folders.get(folderId);
+  if (folder.isRoot || (folder.specialUse ?? []).length) {
+    throw new Error("built-in folders can't be renamed, moved or deleted");
+  }
+}
+
+function vcardValues(vCard, field) {
+  const pattern = new RegExp(`^${field}(;[^:]*)?:(.*)$`, "gim");
+  return [...(vCard ?? "").matchAll(pattern)].map((m) => m[2].trim());
+}
+
+function vcardValue(vCard, field) {
+  return vcardValues(vCard, field)[0] ?? "";
+}
+
+function vcardEscape(value) {
+  return value.replace(/[\\,;]/g, (c) => `\\${c}`).replace(/[\r\n]+/g, " ");
+}
 
 function finishSearch(seen, limit, truncated) {
   const messages = [...seen.values()].sort((a, b) => b.date - a.date);
@@ -213,11 +556,14 @@ async function onHostMessage(message) {
 messenger.messages.onNewMailReceived.addListener((folder, list) => {
   connect();
   if (!folder.specialUse?.includes("inbox")) return;
-  // Counts only. Subjects and senders never leave without a request.
+  // Counts and sender display names only. Subjects, addresses and bodies stay put.
+  const messages = list.messages;
   port?.postMessage({
     event: "new_mail",
     account: folder.accountId,
-    count: list.messages.length,
+    count: messages.length,
+    senders: senderNames(messages),
+    career: senderNames(messages.filter(isCareer)),
   });
 });
 messenger.runtime.onStartup.addListener(connect);

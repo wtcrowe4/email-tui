@@ -4,8 +4,8 @@ Gmail and Outlook from the terminal, especially inside [herdr](https://github.co
 
 It has two parts:
 
-- **Thunderbird bridge:** a small add-on and local helper that give terminal tools and Claude read access to the mail in your running Thunderbird. It can open a compose window, but it can't send, delete, move or change mail. See [docs/BRIDGE.md](docs/BRIDGE.md).
-- **herdr plugin:** an unread badge and new-mail toasts from the bridge, plus a pane that opens [Rail](https://github.com/vitosans/rail). See [docs/TRY-RAIL.md](docs/TRY-RAIL.md).
+- **Thunderbird bridge:** a small add-on and local helper that let terminal tools and Claude read and organise the mail in your running Thunderbird: folders, moving, archiving, trash, flags, tags, contacts and drafts. It can't send mail, and it hides the content of mail you mark as protected. See [docs/BRIDGE.md](docs/BRIDGE.md).
+- **herdr plugin:** unread and career badges on a Messages workspace and new-mail alerts from the bridge, plus a pane that opens [Rail](https://github.com/vitosans/rail). See [docs/TRY-RAIL.md](docs/TRY-RAIL.md).
 
 Requires Linux, Python 3.11+, Thunderbird 128+ and herdr 0.8+. It has been tested on Thunderbird 153. There are no other dependencies.
 
