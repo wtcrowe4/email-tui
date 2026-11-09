@@ -69,6 +69,8 @@ function headerSummary(m) {
     from: m.author,
     subject: m.subject,
     read: m.read,
+    flagged: m.flagged,
+    tags: m.tags ?? [],
     size: m.size,
     account: m.folder?.accountId,
     folder: m.folder?.path,
@@ -187,6 +189,9 @@ const HANDLERS = {
     if (params.from) query.author = str(params.from, "from");
     if (params.subject) query.subject = str(params.subject, "subject");
     if (params.unread === true) query.read = false;
+    if (params.flagged === true) query.flagged = true;
+    const tag = str(params.tag, "tag", 100);
+    if (tag) query.tags = { mode: "all", tags: { [tag]: true } };
     if (params.inboxOnly === true) {
       const accounts = account ? [{ id: account }] : await mailAccounts();
       const folders = [];

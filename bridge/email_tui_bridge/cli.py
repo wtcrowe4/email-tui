@@ -22,6 +22,8 @@ def parser() -> argparse.ArgumentParser:
     search.add_argument("--account")
     search.add_argument("--unread", action="store_true")
     search.add_argument("--inbox", action="store_true")
+    search.add_argument("--flagged", action="store_true", help="only starred messages")
+    search.add_argument("--tag", help="only messages with this tag key, such as $label1")
     search.add_argument("--since", help="ISO date. Default is 90 days ago")
     search.add_argument("--until", help="ISO date")
     search.add_argument("--limit", type=int, default=20)
@@ -63,6 +65,8 @@ def run(args: argparse.Namespace) -> None:
             "limit": args.limit,
             "unread": args.unread or None,
             "inboxOnly": args.inbox or None,
+            "flagged": args.flagged or None,
+            "tag": args.tag,
         }
     elif args.command == "read":
         params = {"id": args.id}

@@ -39,6 +39,8 @@ TOOLS = {
             "account": {"type": "string", "description": "Account id from list_accounts"},
             "unread": {"type": "boolean", "description": "Only unread messages"},
             "inboxOnly": {"type": "boolean", "description": "Only inbox folders"},
+            "flagged": {"type": "boolean", "description": "Only starred messages"},
+            "tag": {"type": "string", "description": "Only messages with this tag key, such as $label1 (Important)"},
             "since": {"type": "string", "description": "ISO date, such as 2026-01-31"},
             "until": {"type": "string", "description": "ISO date, such as 2026-02-28"},
             "limit": {"type": "integer", "description": "Maximum results, 1 to 50, default 20"},

@@ -8,8 +8,8 @@ Read `docs/BRIDGE.md` for the Thunderbird bridge, `docs/TRY-RAIL.md` for the Rai
 
 | Part | State |
 |---|---|
-| Thunderbird bridge and CLI (`bridge/`, `bin/email-bridge`) | Working on Thunderbird 158 with the real accounts. Add-on 0.4.0: full management except sending, finance redaction, signatures |
-| MCP server (`.mcp.json`, server name `thunderbird`) | 25 tools. Working with add-on 0.4.0 |
+| Thunderbird bridge and CLI (`bridge/`, `bin/email-bridge`) | Working on Thunderbird 158 with the real accounts. Add-on 0.4.1: full management except sending, finance redaction, signatures |
+| MCP server (`.mcp.json`, server name `thunderbird`) | 25 tools. Working with add-on 0.4.1. Search can filter by flag and tag |
 | herdr plugin (`herdr-plugin.toml`) | Working on herdr 0.9.1. Badges show only on the Messages workspace |
 | Rail 0.10.1 | Installed in `~/.local/bin` and verified. No accounts yet |
 | Own TUI | Not started. Decide after a week with Rail |
