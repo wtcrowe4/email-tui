@@ -17,7 +17,7 @@ from .protected import redact
 
 # Everything the add-on offers. There is no send method, and the add-on has no send permission.
 ALLOWED_METHODS = frozenset({
-    "status", "accounts", "unread", "career", "search", "read", "draft", "saveDraft",
+    "status", "accounts", "unread", "priority", "search", "read", "draft", "saveDraft",
     "folders", "createFolder", "renameFolder", "moveFolder", "deleteFolder", "markFolderRead",
     "moveMessages", "copyMessages", "archiveMessages", "trashMessages", "updateMessages",
     "tags", "createTag", "updateTag", "contacts", "addressBooks", "createContact",

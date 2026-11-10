@@ -9,26 +9,48 @@ const SCAN_MS = 20000;
 const BODY_CHARS = 100000;
 const DEFAULT_SINCE_DAYS = 90;
 
-// Generic job-search signals only. Personal rules belong in Thunderbird filters,
-// which stay in the local profile, not in this public file.
-const CAREER_NEVER = /jobalerts-noreply@linkedin\.com|@em\.linkedin\.com/i;
-const CAREER_SENDERS = new RegExp(
-  "(messages-noreply|inmail-hit-reply|hit-reply|invitations|jobs-noreply)@linkedin\\.com" +
-    "|[@.](avature\\.net|myworkday(jobs)?\\.com|greenhouse(-mail)?\\.io|lever\\.co|icims\\.com" +
-    "|smartrecruiters\\.com|jobvite\\.com|ashbyhq\\.com|roberthalf\\.com|dice\\.com)>?$" +
-    "| via linkedin\\b",
-  "i",
-);
-const CAREER_SUBJECT =
-  /\b(interview|recruiter|recruiting|your application|application (received|status|update)|job opportunity|opportunity at)\b/i;
+// Priority rules come from the local client, which reads them from
+// ~/.config/email-tui/priority.json. This public file holds no rules of its own:
+// without them only flagged (starred) mail counts as priority.
+const MAX_RULES = 100;
+const MAX_RULE_CHARS = 300;
+let priorityRules = { flagged: true, senders: [], subjects: [], never: [] };
 const MAX_EVENT_NAMES = 3;
 
 let port = null;
 
-function isCareer(m) {
+function compilePatterns(list) {
+  if (!Array.isArray(list)) return [];
+  const patterns = [];
+  for (const source of list.slice(0, MAX_RULES)) {
+    if (typeof source !== "string" || !source || source.length > MAX_RULE_CHARS) continue;
+    try {
+      patterns.push(new RegExp(source, "i"));
+    } catch {
+      // A bad pattern is skipped, not fatal.
+    }
+  }
+  return patterns;
+}
+
+// Rules sent with a priority request replace the cached ones, which new-mail
+// events also use.
+function setPriorityRules(params) {
+  if (!params || typeof params !== "object" || !("senders" in params || "subjects" in params || "never" in params || "flagged" in params)) return;
+  priorityRules = {
+    flagged: params.flagged !== false,
+    senders: compilePatterns(params.senders),
+    subjects: compilePatterns(params.subjects),
+    never: compilePatterns(params.never),
+  };
+}
+
+function isPriority(m) {
   const author = m.author ?? "";
-  if (CAREER_NEVER.test(author)) return false;
-  return m.flagged === true || CAREER_SENDERS.test(author) || CAREER_SUBJECT.test(m.subject ?? "");
+  const subject = m.subject ?? "";
+  const { flagged, senders, subjects, never } = priorityRules;
+  if (never.some((p) => p.test(author) || p.test(subject))) return false;
+  return (flagged && m.flagged === true) || senders.some((p) => p.test(author)) || subjects.some((p) => p.test(subject));
 }
 
 // Display name only, never the address, so toasts show "Robert Half", not mail ids.
@@ -137,8 +159,9 @@ const HANDLERS = {
     return result;
   },
 
-  // Unread inbox mail that looks job-related, per account. Counts only.
-  async career() {
+  // Unread inbox mail that matches the priority rules, per account. Counts only.
+  async priority(params) {
+    setPriorityRules(params);
     const result = [];
     for (const account of await mailAccounts()) {
       const folders = await inboxFolders(account.id);
@@ -154,7 +177,7 @@ const HANDLERS = {
         while (true) {
           for (const m of page.messages) {
             scanned += 1;
-            if (isCareer(m)) unread += 1;
+            if (isPriority(m)) unread += 1;
           }
           if (!page.id) break;
           if (scanned >= SCAN_CAP) {
@@ -568,7 +591,7 @@ messenger.messages.onNewMailReceived.addListener((folder, list) => {
     account: folder.accountId,
     count: messages.length,
     senders: senderNames(messages),
-    career: senderNames(messages.filter(isCareer)),
+    priority: senderNames(messages.filter(isPriority)),
   });
 });
 messenger.runtime.onStartup.addListener(connect);

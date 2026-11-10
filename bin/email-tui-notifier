@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
-"""Keeps herdr's $mail and $career tokens current and shows toasts on new mail.
+"""Keeps herdr's $mail and $priority tokens current and shows toasts on new mail.
 
 The badges go only on the workspace named by EMAIL_TUI_WORKSPACE (default
 "Messages"). Toasts show sender display names, never subjects or bodies.
-Career mail also raises a desktop alert that stays until dismissed.
+Priority mail also raises a desktop alert that stays until dismissed.
+
+Priority rules live outside the repo in ~/.config/email-tui/priority.json (or
+EMAIL_TUI_PRIORITY). See docs/BRIDGE.md. Without the file, starred mail is priority.
 """
 
 import fcntl
@@ -23,7 +26,8 @@ from email_tui_bridge.client import BridgeError, call, events
 HERDR = os.environ.get("HERDR_BIN_PATH", "herdr")
 WORKSPACE = os.environ.get("EMAIL_TUI_WORKSPACE", "Messages")
 SOURCE = "wtcrowe4.email-tui"
-TOKENS = ("mail", "career")
+TOKENS = ("mail", "priority")
+RULE_KEYS = ("flagged", "senders", "subjects", "never")
 REFRESH_SECONDS = 60
 RETRY_SECONDS = 30
 MAX_HERDR_FAILURES = 3
@@ -44,10 +48,22 @@ def workspaces() -> list[dict] | None:
     return json.loads(output)["result"]["workspaces"]
 
 
-def wanted_tokens(mail: int | None, career: int | None) -> dict[str, str | None]:
+def priority_rules() -> dict:
+    """The local priority rules, or {} to use the add-on's default (starred mail only)."""
+    path = Path(os.environ.get("EMAIL_TUI_PRIORITY", Path.home() / ".config/email-tui/priority.json"))
+    try:
+        data = json.loads(path.read_text())
+    except (OSError, ValueError):
+        return {}
+    if not isinstance(data, dict):
+        return {}
+    return {k: data[k] for k in RULE_KEYS if k in data}
+
+
+def wanted_tokens(mail: int | None, priority: int | None) -> dict[str, str | None]:
     return {
         "mail": f"✉ {mail}" if mail else None,
-        "career": f"★ {career}" if career else None,
+        "priority": f"★ {priority}" if priority else None,
     }
 
 
@@ -67,11 +83,11 @@ def badge_calls(spaces: list[dict], wanted: dict[str, str | None]) -> list[list[
 
 
 def toast(event: dict, names: dict[str, str]) -> tuple[str, str, bool]:
-    """Title, body and whether this is career mail."""
+    """Title, body and whether this is priority mail."""
     where = names.get(event.get("account"), "Mail")
-    career = event.get("career") or []
-    if career:
-        return "★ Career mail", f"{', '.join(career)} · {where}", True
+    priority = event.get("priority") or []
+    if priority:
+        return "★ Priority mail", f"{', '.join(priority)} · {where}", True
     count = event.get("count", 1)
     senders = event.get("senders") or []
     who = ", ".join(senders) if senders else f"{count} new"
@@ -91,8 +107,8 @@ def desktop_alert(title: str, body: str) -> None:
         pass
 
 
-def total(method: str) -> tuple[int | None, dict[str, str]]:
-    accounts = call(method)
+def total(method: str, params: dict | None = None) -> tuple[int | None, dict[str, str]]:
+    accounts = call(method, **(params or {}))
     return sum(a["unread"] for a in accounts), {a["account"]: a["name"] for a in accounts}
 
 
@@ -125,9 +141,9 @@ def main() -> None:
         except BridgeError:
             mail = None
         try:
-            career = total("career")[0] if mail is not None else None
+            priority = total("priority", priority_rules())[0] if mail is not None else None
         except BridgeError:
-            career = None  # An older add-on without the career count.
+            priority = None  # An older add-on without the priority count.
         spaces = workspaces()
         if spaces is None:
             # The herdr server is gone, so stop until its next startup hook.
@@ -136,17 +152,17 @@ def main() -> None:
                 return
         else:
             failures = 0
-            for args in badge_calls(spaces, wanted_tokens(mail, career)):
+            for args in badge_calls(spaces, wanted_tokens(mail, priority)):
                 herdr(*args)
         try:
             event = pending.get(timeout=REFRESH_SECONDS if mail is not None else RETRY_SECONDS)
         except queue.Empty:
             continue
         if event.get("event") == "new_mail":
-            title, body, is_career = toast(event, names)
-            sound = "request" if is_career else "none"
+            title, body, is_priority = toast(event, names)
+            sound = "request" if is_priority else "none"
             herdr("notification", "show", title, "--body", body, "--sound", sound)
-            if is_career:
+            if is_priority:
                 desktop_alert(title, body)
 
 

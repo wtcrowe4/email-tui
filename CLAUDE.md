@@ -8,15 +8,15 @@ Read `docs/BRIDGE.md` for the Thunderbird bridge, `docs/TRY-RAIL.md` for the Rai
 
 | Part | State |
 |---|---|
-| Thunderbird bridge and CLI (`bridge/`, `bin/email-bridge`) | Working on Thunderbird 158 with the real accounts. Add-on 0.4.1: full management except sending, finance redaction, signatures |
-| MCP server (`.mcp.json`, server name `thunderbird`) | 25 tools. Working with add-on 0.4.1. Search can filter by flag and tag |
-| herdr plugin (`herdr-plugin.toml`) | Working on herdr 0.9.1. Badges show only on the Messages workspace |
+| Thunderbird bridge and CLI (`bridge/`, `bin/email-bridge`) | Working on Thunderbird 158 with the real accounts. Add-on 0.5.0: full management except sending, finance redaction, signatures |
+| MCP server (`.mcp.json`, server name `thunderbird`) | 25 tools. Working with add-on 0.5.0. Search can filter by flag and tag |
+| herdr plugin (`herdr-plugin.toml`) | Working on herdr 0.9.1. `$mail` and `$priority` badges show only on the Messages workspace. Priority rules are local, in `~/.config/email-tui/priority.json` |
 | Rail 0.10.1 | Installed in `~/.local/bin` and verified. No accounts yet |
 | Own TUI | Not started. Decide after a week with Rail |
 
 ## Next steps
 
-1. Outlook: folders and filters are in place. Next, the approved extra folders (Finance subfolders, Shopping, Streaming, Gaming/Sportsbook, Career/Applications, Career/LinkedIn, Notifications/Microsoft), then filters for them.
+1. Outlook: folders and filters are in place. Next, the approved extra folders listed in the local notes, then filters for them.
 2. Texts in herdr through beeper-tui and Beeper Desktop's local API: Messages workspace, hop key, quick-reply popup.
 3. Owner creates the Google OAuth client and runs `rail setup`. See `docs/TRY-RAIL.md`.
 4. Owner tries the Azure registration for a personal Microsoft account in Rail. Stop if it hits a wall, because the bridge already reaches that account.

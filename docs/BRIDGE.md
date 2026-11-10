@@ -61,20 +61,38 @@ Email is written by strangers, so a message can contain instructions aimed at Cl
 The plugin sets two tokens on one workspace, named by `EMAIL_TUI_WORKSPACE` (default `Messages`), and clears them everywhere else:
 
 - `$mail`: unread inbox mail, as `✉ 5`
-- `$career`: unread inbox mail that looks job-related, as `★ 2`
+- `$priority`: unread inbox mail that matches your priority rules, as `★ 2`
 
 Show them by adding the tokens to a sidebar row in `~/.config/herdr/config.toml`:
 
 ```toml
 [ui.sidebar.spaces]
 rows = [
-  ["state_icon", "workspace", "$career", "$mail"],
+  ["state_icon", "workspace", "$priority", "$mail"],
   ["branch", "git_status"],
 ]
 ```
 
-New mail shows a herdr toast with the senders' display names. Career mail also raises a desktop notification that stays until dismissed.
+New mail shows a herdr toast with the senders' display names. Priority mail also raises a desktop notification that stays until dismissed.
 
-Career mail is flagged mail, LinkedIn messages, invitations and application updates, mail from common recruiting systems, and subjects such as "interview" or "your application". LinkedIn job alerts are left out. The rules in `background.js` are generic on purpose. Rules about specific people or organisations belong in Thunderbird filters, which stay in the local profile.
+### Priority rules
+
+Priority mail is whatever you decide matters: clients, orders, invoices, a list of senders. The rules live outside the repo in `~/.config/email-tui/priority.json` (or `EMAIL_TUI_PRIORITY`). The notifier sends them to the add-on with each count, and the add-on uses the latest ones for new-mail toasts.
+
+```json
+{
+  "flagged": true,
+  "senders": ["@client\\.example$", "orders@shop\\.example"],
+  "subjects": ["\\b(purchase order|PO#|invoice|quote request)\\b"],
+  "never": ["newsletter", "no-?reply@marketing\\."]
+}
+```
+
+- `flagged`: starred mail counts as priority. Default `true`.
+- `senders`: case-insensitive regular expressions matched against the sender, `Name <address>`.
+- `subjects`: case-insensitive regular expressions matched against the subject.
+- `never`: matches on sender or subject that are never priority, checked first.
+
+Without the file, only starred mail is priority. The add-on ships no rules of its own, so nothing about your mail ends up in this repo.
 
 The counts cover inbox folders only, because Gmail labels would otherwise count one message several times.

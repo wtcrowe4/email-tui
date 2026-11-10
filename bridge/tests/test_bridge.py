@@ -273,7 +273,7 @@ class NotifierTest(unittest.TestCase):
                        "--clear-token", "mail"], calls)
         set_on = {c[2] for c in calls if "--token" in c}
         self.assertEqual(set_on, {"w2"})
-        self.assertIn("career=★ 1", [c[-1] for c in calls])
+        self.assertIn("priority=★ 1", [c[-1] for c in calls])
 
     def test_unchanged_tokens_make_no_calls(self):
         spaces = [{"workspace_id": "w2", "label": "Messages", "tokens": {"mail": "✉ 3"}}]
@@ -281,18 +281,46 @@ class NotifierTest(unittest.TestCase):
 
     def test_toast_shows_senders(self):
         event = {"event": "new_mail", "account": "a1", "count": 4, "senders": ["Example News", "Shop"]}
-        title, body, career = self.notifier.toast(event, {"a1": "Personal"})
-        self.assertEqual((title, career), ("New mail", False))
+        title, body, priority = self.notifier.toast(event, {"a1": "Personal"})
+        self.assertEqual((title, priority), ("New mail", False))
         self.assertEqual(body, "Example News, Shop +2 more · Personal")
 
-    def test_career_toast_takes_priority(self):
-        event = {"event": "new_mail", "account": "a1", "count": 2, "senders": ["Shop", "Example Recruiting"],
-                 "career": ["Example Recruiting"]}
-        title, body, career = self.notifier.toast(event, {})
-        self.assertTrue(career)
-        self.assertEqual(title, "★ Career mail")
-        self.assertIn("Example Recruiting", body)
+    def test_priority_toast_wins(self):
+        event = {"event": "new_mail", "account": "a1", "count": 2, "senders": ["Shop", "Example Client"],
+                 "priority": ["Example Client"]}
+        title, body, priority = self.notifier.toast(event, {})
+        self.assertTrue(priority)
+        self.assertEqual(title, "★ Priority mail")
+        self.assertIn("Example Client", body)
         self.assertNotIn("Shop", body)
+
+    def test_priority_rules_from_local_file(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "priority.json"
+            path.write_text(json.dumps({"senders": ["@client\\.example$"], "subjects": ["\\border\\b"],
+                                         "never": ["newsletter"], "other": 1}))
+            old = os.environ.get("EMAIL_TUI_PRIORITY")
+            os.environ["EMAIL_TUI_PRIORITY"] = str(path)
+            try:
+                rules = self.notifier.priority_rules()
+            finally:
+                if old is None:
+                    os.environ.pop("EMAIL_TUI_PRIORITY")
+                else:
+                    os.environ["EMAIL_TUI_PRIORITY"] = old
+        self.assertEqual(set(rules), {"senders", "subjects", "never"})
+        self.assertEqual(rules["never"], ["newsletter"])
+
+    def test_missing_priority_file_uses_default(self):
+        old = os.environ.get("EMAIL_TUI_PRIORITY")
+        os.environ["EMAIL_TUI_PRIORITY"] = "/nonexistent/priority.json"
+        try:
+            self.assertEqual(self.notifier.priority_rules(), {})
+        finally:
+            if old is None:
+                os.environ.pop("EMAIL_TUI_PRIORITY")
+            else:
+                os.environ["EMAIL_TUI_PRIORITY"] = old
 
 
 if __name__ == "__main__":

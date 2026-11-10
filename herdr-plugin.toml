@@ -1,7 +1,7 @@
 id = "wtcrowe4.email-tui"
 name = "Email TUI"
 version = "0.1.0"
-description = "Mail in a herdr pane, plus unread and career badges and new-mail alerts from a local Thunderbird bridge."
+description = "Mail in a herdr pane, plus unread and priority badges and new-mail alerts from a local Thunderbird bridge."
 min_herdr_version = "0.8.0"
 platforms = ["linux"]
 
