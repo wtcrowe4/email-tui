@@ -2,8 +2,10 @@
 """Keeps herdr's $mail and $priority tokens current and shows toasts on new mail.
 
 The badges go only on the workspace named by EMAIL_TUI_WORKSPACE (default
-"Messages"). Toasts show sender display names, never subjects or bodies.
-Priority mail also raises a desktop alert that stays until dismissed.
+"Email"). The mail badge is always there: the unread count, 0 included, or "?"
+while Thunderbird is unreachable. Toasts show sender display names, never
+subjects or bodies.
+Priority mail also raises a short desktop alert that closes after a few seconds.
 
 Priority rules live outside the repo in ~/.config/email-tui/priority.json (or
 EMAIL_TUI_PRIORITY). See docs/BRIDGE.md. Without the file, starred mail is priority.
@@ -24,7 +26,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "bridge"))
 from email_tui_bridge.client import BridgeError, call, events
 
 HERDR = os.environ.get("HERDR_BIN_PATH", "herdr")
-WORKSPACE = os.environ.get("EMAIL_TUI_WORKSPACE", "Messages")
+WORKSPACE = os.environ.get("EMAIL_TUI_WORKSPACE", "Email")
+MAIL_ICON = "\U000f01ee"  # Nerd Font md-email (󰇮)
 SOURCE = "wtcrowe4.email-tui"
 TOKENS = ("mail", "priority")
 RULE_KEYS = ("flagged", "senders", "subjects", "never")
@@ -62,7 +65,7 @@ def priority_rules() -> dict:
 
 def wanted_tokens(mail: int | None, priority: int | None) -> dict[str, str | None]:
     return {
-        "mail": f"✉ {mail}" if mail else None,
+        "mail": f"{MAIL_ICON} {'?' if mail is None else mail}",
         "priority": f"★ {priority}" if priority else None,
     }
 
@@ -99,7 +102,9 @@ def toast(event: dict, names: dict[str, str]) -> tuple[str, str, bool]:
 def desktop_alert(title: str, body: str) -> None:
     try:
         subprocess.run(
-            ["notify-send", "--urgency=critical", "--app-name=Email TUI", title, body],
+            # low urgency: the Omarchy shell closes it after 5 s (critical never closes)
+            ["notify-send", "--urgency=low", "--expire-time=5000",
+             "--app-name=Email TUI", title, body],
             timeout=10,
             check=False,
         )

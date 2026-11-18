@@ -58,9 +58,9 @@ Email is written by strangers, so a message can contain instructions aimed at Cl
 
 ## Herdr badge and alerts
 
-The plugin sets two tokens on one workspace, named by `EMAIL_TUI_WORKSPACE` (default `Messages`), and clears them everywhere else:
+The plugin sets two tokens on one workspace, named by `EMAIL_TUI_WORKSPACE` (default `Email`), and clears them everywhere else:
 
-- `$mail`: unread inbox mail, as `✉ 5`
+- `$mail`: unread inbox mail, as `󰇮 5` (a Nerd Font icon). It is always shown: `󰇮 0` when there is none, `󰇮 ?` while Thunderbird is unreachable
 - `$priority`: unread inbox mail that matches your priority rules, as `★ 2`
 
 Show them by adding the tokens to a sidebar row in `~/.config/herdr/config.toml`:

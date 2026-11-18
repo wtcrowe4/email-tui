@@ -263,8 +263,8 @@ class NotifierTest(unittest.TestCase):
     def setUp(self):
         self.notifier = load_notifier()
         self.spaces = [
-            {"workspace_id": "w1", "label": "code", "tokens": {"mail": "✉ 3"}},
-            {"workspace_id": "w2", "label": "messages", "tokens": {}},
+            {"workspace_id": "w1", "label": "code", "tokens": {"mail": "󰇮 3"}},
+            {"workspace_id": "w2", "label": "email", "tokens": {}},
         ]
 
     def test_badges_only_on_mail_workspace(self):
@@ -276,8 +276,12 @@ class NotifierTest(unittest.TestCase):
         self.assertIn("priority=★ 1", [c[-1] for c in calls])
 
     def test_unchanged_tokens_make_no_calls(self):
-        spaces = [{"workspace_id": "w2", "label": "Messages", "tokens": {"mail": "✉ 3"}}]
+        spaces = [{"workspace_id": "w2", "label": "Email", "tokens": {"mail": "󰇮 3"}}]
         self.assertEqual(self.notifier.badge_calls(spaces, self.notifier.wanted_tokens(3, 0)), [])
+
+    def test_mail_badge_stays_at_zero_and_when_unreachable(self):
+        self.assertEqual(self.notifier.wanted_tokens(0, 0), {"mail": "󰇮 0", "priority": None})
+        self.assertEqual(self.notifier.wanted_tokens(None, None)["mail"], "󰇮 ?")
 
     def test_toast_shows_senders(self):
         event = {"event": "new_mail", "account": "a1", "count": 4, "senders": ["Example News", "Shop"]}
