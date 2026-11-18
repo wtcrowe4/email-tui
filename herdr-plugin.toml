@@ -9,6 +9,11 @@ platforms = ["linux"]
 [[startup]]
 command = ["bash", "bin/email-tui-start"]
 
+# Restarts beeper-tui and Rail in the Messages and Email workspaces, which herdr
+# restores without their programs. Skips panes already running something.
+[[startup]]
+command = ["bash", "bin/herdr-autopanes"]
+
 [[actions]]
 id = "start"
 title = "Email: start notifier"
