@@ -1,0 +1,108 @@
+#!/usr/bin/env python3
+"""Hop herdr between the Email and Messages workspaces, then raise its window.
+
+Bound to a Hyprland key. From Email it goes to Messages; from anywhere else it
+goes to Email, so one key both jumps in and flips between the two.
+
+Labels can be changed with HERDR_HOP_FROM (default "Email") and HERDR_HOP_TO
+(default "Messages").
+"""
+import json
+import os
+import subprocess
+import sys
+import time
+
+HERDR = os.environ.get("HERDR_BIN_PATH", "herdr")
+
+
+def run_json(*cmd):
+    out = subprocess.run(cmd, capture_output=True, text=True, timeout=5)
+    if out.returncode != 0:
+        raise RuntimeError(out.stderr.strip() or f"{cmd[0]} failed")
+    return json.loads(out.stdout)
+
+
+def pick_target(workspaces, first, second):
+    """Return the workspace id to focus, or None when neither label exists."""
+    by_label = {w.get("label"): w for w in workspaces}
+    a, b = by_label.get(first), by_label.get(second)
+    if a and a.get("focused") and b:
+        return b["workspace_id"]
+    if a:
+        return a["workspace_id"]
+    return b["workspace_id"] if b else None
+
+
+def ancestors(pid):
+    seen = []
+    while pid > 1 and pid not in seen:
+        seen.append(pid)
+        try:
+            with open(f"/proc/{pid}/stat") as f:
+                pid = int(f.read().rsplit(")", 1)[1].split()[1])
+        except (OSError, ValueError, IndexError):
+            break
+    return seen
+
+
+def herdr_client_pids():
+    out = subprocess.run(["pgrep", "-x", "herdr"], capture_output=True, text=True)
+    pids = []
+    for p in out.stdout.split():
+        try:
+            with open(f"/proc/{p}/cmdline", "rb") as f:
+                args = f.read().split(b"\0")
+        except OSError:
+            continue
+        if b"server" not in args:
+            pids.append(int(p))
+    return pids
+
+
+def pick_window(clients, label, client_pids):
+    """Find the terminal window running the herdr client.
+
+    Prefer a window whose title names the new workspace (herdr sets the title
+    to "<host>: <workspace>"), then any window owned by a process that is an
+    ancestor of a herdr client.
+    """
+    for c in clients:
+        if c.get("title", "").endswith(": " + label):
+            return c["address"]
+    owners = {a for p in client_pids for a in ancestors(p)}
+    for c in clients:
+        if c.get("pid") in owners:
+            return c["address"]
+    return None
+
+
+def main():
+    first = os.environ.get("HERDR_HOP_FROM", "Email")
+    second = os.environ.get("HERDR_HOP_TO", "Messages")
+    try:
+        ws = run_json(HERDR, "workspace", "list")["result"]["workspaces"]
+    except Exception as e:  # herdr not running, socket gone, bad JSON
+        print(f"herdr-mail-hop: {e}", file=sys.stderr)
+        return 1
+    target = pick_target(ws, first, second)
+    if target is None:
+        print(f"herdr-mail-hop: no {first!r} or {second!r} workspace", file=sys.stderr)
+        return 1
+    subprocess.run([HERDR, "workspace", "focus", target], capture_output=True, timeout=5)
+    label = next(w["label"] for w in ws if w["workspace_id"] == target)
+
+    time.sleep(0.15)  # let herdr retitle the terminal
+    try:
+        clients = run_json("hyprctl", "clients", "-j")
+    except Exception:
+        return 0
+    addr = pick_window(clients, label, herdr_client_pids())
+    if addr:
+        subprocess.run(["hyprctl", "dispatch", f'hl.dsp.focus({{ window = "address:{addr}" }})'],
+                       capture_output=True, timeout=5)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
